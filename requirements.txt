@@ -1,0 +1,6 @@
+python-telegram-bot>=20.0
+matplotlib>=3.7.0
+numpy>=1.24.0
+sympy>=1.12
+pillow>=10.0.0
+python-dotenv>=1.0.0
