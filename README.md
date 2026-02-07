@@ -24,7 +24,7 @@
 
 1. **Клонируйте репозиторий** (или скачайте файлы):
    ```bash
-   git clone https://github.com/yourusername/telegram_math_bot.git
+   git clone https://github.com/zomurb/telegram_math_bot.git
    cd telegram_math_bot
    ```
 
