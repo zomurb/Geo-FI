@@ -24,8 +24,8 @@
 
 1. **Клонируйте репозиторий** (или скачайте файлы):
    ```bash
-   git clone https://github.com/zomurb/telegram_math_bot.git
-   cd telegram_math_bot
+   git clone https://github.com/zomurb/Geo-Fi.git
+   cd Geo-Fi
    ```
 
 2. **Создайте виртуальное окружение**:
