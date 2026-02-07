@@ -1,4 +1,4 @@
-# Telegram Math Bot 📐📈
+# Geo-Fi Bot 📐📈
 
 Бот для визуализации алгебраических формул и геометрических фигур.
 Написан на Python с использованием `python-telegram-bot` и `matplotlib`.
