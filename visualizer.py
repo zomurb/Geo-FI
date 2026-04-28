@@ -105,7 +105,10 @@ def plot_function(functions_data, x_range=DEFAULT_X_RANGE):
             # Detect discontinuities
             x_plot, y_plot = clean_data_for_plot(x_vals_orig, y_vals_orig, threshold=100) 
             
-            label = f"${sympy.latex(expr)}$"
+            if isinstance(expr, sympy.Piecewise):
+                label = "piecewise"
+            else:
+                label = f"${sympy.latex(expr)}$"
             ax.plot(x_plot, y_plot, label=label, linewidth=2)
             finite_y = y_plot[np.isfinite(y_plot)]
             if finite_y.size:
