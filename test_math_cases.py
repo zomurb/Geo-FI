@@ -19,7 +19,7 @@ class TestMathBot(unittest.TestCase):
         try:
             result = parse_input(input_text)
             self.assertNotEqual(result['type'], 'error', f"Parse error: {result.get('message')}")
-            
+
             img_buffer = None
             if result['type'] == 'function':
                 img_buffer = plot_function(result['data'])
@@ -31,14 +31,14 @@ class TestMathBot(unittest.TestCase):
                 img_buffer = plot_3d(result)
             elif result['type'] == 'geometry':
                 img_buffer = plot_geometry(result)
-            
+
             self.assertIsNotNone(img_buffer)
-            
+
             # Save file
             filename = f"{self.OUTPUT_DIR}/case_{case_id}.png"
             with open(filename, "wb") as f:
                 f.write(img_buffer.getvalue())
-                
+
         except Exception as e:
             self.fail(f"Exception in case {case_id} ({input_text}): {e}")
 
@@ -74,18 +74,27 @@ class TestMathBot(unittest.TestCase):
             ("y = 1/0", 28),    # Should not crash
             ("y = sin()", 29),  # Parse error expected? Or should handle graceful?
             ("y = x^^2", 30),
-            
+
             # Polar
             ("r = t", 31),
             ("r = 1 - sin(t)", 32),
             ("r = sin(3*t)", 33),
-            
+
             # 3D
             ("z = x^2 + y^2", 34),
             ("z = sin(sqrt(x^2 + y^2))", 35),
-            ("z = x * y", 36)
+            ("z = x * y", 36),
+            ("x^2 + y^2 + z^2 = 9", 37),
+            ("x^2/4 + y^2/9 + z^2/1 = 1", 38),
+            ("ellipsoid a=2 b=3 c=1", 39),
+            ("cylinder a=2 b=2", 40),
+            ("конус a=1 b=1 c=1", 41),
+            ("параболоид a=1 b=1", 42),
+            ("гиперболоид a=1 b=1 c=1", 43),
+            ("гиперболоид двуполостный a=1 b=1 c=1", 44),
+            ("седло a=1 b=1", 45)
         ]
-        
+
         for text, idx in cases:
             with self.subTest(msg=f"Case {idx}: {text}"):
                 print(f"Running case {idx}: {text}")
@@ -95,7 +104,7 @@ class TestMathBot(unittest.TestCase):
                     if res['type'] != 'error':
                        # If it parses (empty arg?), let's see if it plots
                        pass
-                    continue 
+                    continue
 
                 self.run_case(text, idx)
 
