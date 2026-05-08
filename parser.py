@@ -24,7 +24,13 @@ GEOMETRY_KEYWORDS = {
     'треугольник': 'triangle',
     'прямоугольник': 'rectangle',
     'эллипс': 'ellipse',
-    'парабола': 'parabola' 
+    'парабола': 'parabola',
+    'эллипсоид': 'ellipsoid',
+    'параболоид': 'paraboloid',
+    'гиперболоид': 'hyperboloid',
+    'конус': 'cone',
+    'цилиндр': 'cylinder',
+    'седло': 'hyperbolic_paraboloid',
 }
 
 TRANSFORMATIONS = standard_transformations + (implicit_multiplication_application, convert_xor)
@@ -38,6 +44,7 @@ ALLOWED_SYMBOLS = {
 }
 ALLOWED_NAMES = {
     **ALLOWED_SYMBOLS,
+    'ln': sympy.log,
     'sin': sympy.sin,
     'cos': sympy.cos,
     'tan': sympy.tan,
@@ -187,7 +194,7 @@ def preprocess_input(text):
     text = text.lower().strip()
     # Replace weird power syntax
     text = text.replace('^^', '**')
-    
+
     # Replace |expr| with abs(expr)
     # Greedy match might be an issue for |x| + |y|, so use non-greedy
     text = re.sub(r'\|([^|]+)\|', r'abs(\1)', text)
@@ -216,10 +223,15 @@ def parse_input(text):
         return parse_algebra("diff", base_text.split(":", 1)[1].strip())
     if base_text.startswith("integrate:") or base_text.startswith("интеграл:"):
         return parse_algebra("integrate", base_text.split(":", 1)[1].strip())
-    
+
     # Check for geometry commands first
-    for ru_keyword, shape_type in GEOMETRY_KEYWORDS.items():
-        if base_text.startswith(ru_keyword):
+    # Sort keywords by length descending to match longest first (e.g. 'гиперболоид' vs something else if it was a prefix)
+    sorted_ru_keywords = sorted(GEOMETRY_KEYWORDS.items(), key=lambda x: len(x[0]), reverse=True)
+    for ru_keyword, shape_type in sorted_ru_keywords:
+        # Check for English or Russian keyword at the start
+        if base_text.startswith(ru_keyword) or base_text.startswith(shape_type):
+            if shape_type in ['ellipsoid', 'paraboloid', 'hyperboloid', 'cone', 'cylinder', 'hyperbolic_paraboloid']:
+                return parse_3d_quadric(base_text, shape_type)
             result = parse_geometry(base_text, shape_type)
             if result.get("type") == "geometry":
                 result["transformations"] = transformations
@@ -235,14 +247,26 @@ def parse_input(text):
         if result.get("type") == "geometry":
             result["transformations"] = transformations
         return result
-    
-    # Check for 3D: "z = x^2 + y^2"
-    # Look for assignment to z (strictly z=, likely containing x and y)
+
+    # Check for 3D: "z = x^2 + y^2" or "x^2 + y^2 + z^2 = 1"
+    # First, check for explicit z = ...
     if re.search(r'\bz\s*(?<![<>!])=(?![=])', base_text):
         # Extract the RHS
         rhs = re.split(r'\bz\s*=', base_text, 1)[1].strip()
-        return parse_3d(rhs)
-        
+        # If RHS also contains z, it's implicit
+        try:
+            expr_rhs = _safe_parse_expr(rhs)
+            if any(s.name == 'z' for s in expr_rhs.free_symbols):
+                return parse_3d_implicit("z", rhs)
+            return parse_3d(rhs)
+        except:
+            return parse_3d(rhs)
+
+    # Check for general equation with z: e.g. x^2 + y^2 + z^2 = 1
+    if '=' in base_text and 'z' in base_text:
+        parts = base_text.split('=', 1)
+        return parse_3d_implicit(parts[0], parts[1])
+
     # Check for Polar: "r = 1 + cos(t)" or "r = t"
     if re.search(r'\br\s*(?<![<>!])=(?![=])', base_text):
         rhs = re.split(r'\br\s*=', base_text, 1)[1].strip()
@@ -254,7 +278,7 @@ def parse_input(text):
     # We look for x followed by = (not >=, <=, ==, !=)
     has_x_assign = re.search(r'\bx\s*(?<![<>!])=(?![=])', base_text)
     has_y_assign = re.search(r'\by\s*(?<![<>!])=(?![=])', base_text)
-    
+
     if has_x_assign and has_y_assign:
         # Allow semicolon or comma separation
         parts = re.split(r'[;,]', base_text)
@@ -268,7 +292,7 @@ def parse_input(text):
                     x_part = p.split('=', 1)[1].strip()
                 elif re.match(r'^y\s*(?<![<>!])=(?![=])', p):
                     y_part = p.split('=', 1)[1].strip()
-            
+
             if x_part and y_part:
                 return parse_parametric(x_part, y_part)
 
@@ -289,17 +313,17 @@ def parse_geometry(text, shape_type):
                 return {'type': 'geometry', 'shape': 'circle', 'r': float(r_match.group(1)), 'center': center}
             else:
                 return {'type': 'error', 'message': "Укажите радиус, например: круг r=5"}
-                
+
         elif shape_type == 'triangle':
             if len(points) == 3:
                 return {'type': 'geometry', 'shape': 'triangle_points', 'points': points, 'labels': labels[:3]}
             # "треугольник a=3 b=4 c=5"
             params = {}
             for param in ['a', 'b', 'c']:
-                match = re.search(f'{param}\s*=\s*(\d+(\.\d+)?)', text)
+                match = re.search(fr'{param}\s*=\s*(\d+(\.\d+)?)', text)
                 if match:
                     params[param] = float(match.group(1))
-            
+
             if len(params) == 3:
                 return {'type': 'geometry', 'shape': 'triangle', **params}
             else:
@@ -317,7 +341,7 @@ def parse_geometry(text, shape_type):
              # "прямоугольник a=5 b=3" or "width=5 height=3"
             match_a = re.search(r'(?:a|width|ширина)\s*=\s*(\d+(\.\d+)?)', text)
             match_b = re.search(r'(?:b|height|высота)\s*=\s*(\d+(\.\d+)?)', text)
-            
+
             if match_a and match_b:
                 return {'type': 'geometry', 'shape': 'rectangle', 'width': float(match_a.group(1)), 'height': float(match_b.group(1))}
             else:
@@ -327,14 +351,14 @@ def parse_geometry(text, shape_type):
              # "эллипс a=4 b=2"
             match_a = re.search(r'a\s*=\s*(\d+(\.\d+)?)', text)
             match_b = re.search(r'b\s*=\s*(\d+(\.\d+)?)', text)
-            
+
             if match_a and match_b:
                 return {'type': 'geometry', 'shape': 'ellipse', 'width': float(match_a.group(1)) * 2, 'height': float(match_b.group(1)) * 2}
             else:
                  return {'type': 'error', 'message': "Укажите полуоси a и b, например: эллипс a=4 b=2"}
-                 
+
         return {'type': 'error', 'message': f"Фигура {shape_type} пока не поддерживается полностью."}
-        
+
     except Exception as e:
         return {'type': 'error', 'message': f"Ошибка разбора параметров фигуры: {str(e)}"}
 
@@ -439,55 +463,118 @@ def parse_3d(z_str):
         return {
             'type': '3d',
             'data': expr,
-            'raw': z_str
+            'raw': z_str,
+            'implicit': False
         }
     except Exception as e:
         return {'type': 'error', 'message': f"Ошибка разбора 3D функции: {e}"}
 
+def parse_3d_implicit(lhs_str, rhs_str):
+    try:
+        lhs = _safe_parse_expr(lhs_str)
+        rhs = _safe_parse_expr(rhs_str)
+        return {
+            'type': '3d',
+            'data': lhs - rhs,
+            'raw': f"{lhs_str} = {rhs_str}",
+            'implicit': True
+        }
+    except Exception as e:
+        return {'type': 'error', 'message': f"Ошибка разбора 3D уравнения: {e}"}
+
+def parse_3d_quadric(text, shape_type):
+    try:
+        # Extract a, b, c from text
+        params = {}
+        for p in ['a', 'b', 'c']:
+            match = re.search(fr'{p}\s*=\s*(\d+(\.\d+)?)', text)
+            params[p] = float(match.group(1)) if match else 1.0
+
+        a, b, c = params['a'], params['b'], params['c']
+        x, y, z = sympy.symbols('x y z')
+
+        if shape_type == 'ellipsoid':
+            # x^2/a^2 + y^2/b^2 + z^2/c^2 = 1
+            expr = (x**2 / a**2) + (y**2 / b**2) + (z**2 / c**2) - 1
+        elif shape_type == 'paraboloid':
+            # z = x^2/a^2 + y^2/b^2
+            expr = (x**2 / a**2) + (y**2 / b**2) - z
+        elif shape_type == 'hyperboloid':
+            # x^2/a^2 + y^2/b^2 - z^2/c^2 = 1 (one sheet)
+            # check for "двуполостный" or something?
+            if 'дву' in text:
+                 expr = (x**2 / a**2) + (y**2 / b**2) - (z**2 / c**2) + 1
+            else:
+                 expr = (x**2 / a**2) + (y**2 / b**2) - (z**2 / c**2) - 1
+        elif shape_type == 'cone':
+            # x^2/a^2 + y^2/b^2 - z^2/c^2 = 0
+            expr = (x**2 / a**2) + (y**2 / b**2) - (z**2 / c**2)
+        elif shape_type == 'cylinder':
+            # x^2/a^2 + y^2/b^2 = 1
+            expr = (x**2 / a**2) + (y**2 / b**2) - 1
+        elif shape_type == 'hyperbolic_paraboloid':
+            # z = y^2/b^2 - x^2/a^2
+            expr = (y**2 / b**2) - (x**2 / a**2) - z
+        else:
+            return {'type': 'error', 'message': f"Неизвестная фигура: {shape_type}"}
+
+        return {
+            'type': '3d',
+            'data': expr,
+            'raw': text,
+            'implicit': True
+        }
+    except Exception as e:
+        return {'type': 'error', 'message': f"Ошибка разбора 3D фигуры: {e}"}
+
 def parse_multiple_functions(text):
     # Handle piecewise functions having semicolons inside { }
-    # We replace ; inside {} with a placeholder
+    # We replace ; and , inside {} with placeholders
     def replacement(match):
-        return match.group(0).replace(';', '##SEMICOLON##')
-    
-    # Regex to find { ... } blocks and replace ; inside them
+        content = match.group(0)
+        content = content.replace(';', '##SEMICOLON##')
+        content = content.replace(',', '##COMMA##')
+        return content
+
+    # Regex to find { ... } blocks and replace ; and , inside them
     # Non-nested
     text_processed = re.sub(r'\{[^}]*\}', replacement, text)
-    
+
     # Split by semicolon for multiple functions
     parts = text_processed.split(';')
     functions = []
-    
+
     for part in parts:
         # Restore semicolon
         part = part.replace('##SEMICOLON##', ';')
         part = part.strip()
         if not part: continue
-        
+
         # Remove "y =" or "f(x) =" if present
         part = re.sub(r'^(?:y|f\(x\))\s*=\s*', '', part)
-        
+
         try:
+            # Restore placeholders before checking start/end for piecewise
+            part = part.replace('##COMMA##', ',').replace('##SEMICOLON##', ';')
+
             # Check for piecewise syntax: { expr1, cond1; expr2, cond2 }
             if part.startswith('{') and part.endswith('}'):
                 content = part[1:-1]
                 # We replaced ; with ##SEMICOLON##, so split by that
-                segments = content.split('##SEMICOLON##')
+                segments = content.split(';')
                 piecewise_args = []
                 for segment in segments:
                     if ',' in segment:
                         expr_str, cond_str = segment.split(',', 1)
+
                         # Sympy expects (expr, cond) tuples
-                        expr = _safe_parse_expr(expr_str.strip())
-                        
-                        # Handle condition: replace =, <, > with sympy logic if possible or just parse
-                        # Sympy parsing usually handles >=, <=, etc.
-                        cond = _safe_parse_expr(cond_str.strip())
+                        expr = _safe_parse_expr(expr_str)
+                        cond = _safe_parse_expr(cond_str)
                         piecewise_args.append((expr, cond))
                     else:
                         # Fallback or error?
                         pass
-                
+
                 if piecewise_args:
                     # Create Sympy Piecewise object
                     expr = sympy.Piecewise(*piecewise_args)
@@ -499,7 +586,7 @@ def parse_multiple_functions(text):
             functions.append(expr)
         except Exception as e:
             return {'type': 'error', 'message': f"Не удалось разобрать формулу '{part}': {str(e)}"}
-            
+
     if functions:
         return {'type': 'function', 'data': functions}
     else:
